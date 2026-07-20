@@ -1428,6 +1428,11 @@ class CPL_DLL VRTSimpleSource CPL_NON_FINAL : public VRTSource
     int m_nExplicitSharedStatus = -1;  // -1 unknown, 0 = unshared, 1 = shared
     CPLString m_osSrcDSName{};
 
+    // Optional GCS object generation (version) pin for a /vsigs/ source. When
+    // set, it is applied as the GS_GENERATION path-specific option when the
+    // source is opened, so a specific object version is read.
+    CPLString m_osGeneration{};
+
     bool m_bDropRefOnSrcBand = true;
 
     int NeedMaxValAdjustment() const;

@@ -509,6 +509,14 @@ void VRTSimpleSource::AddSourceFilenameNode(const char *pszVRTPath,
                              CXT_Attribute, "shared"),
             CXT_Text, "0");
     }
+
+    if (!m_osGeneration.empty())
+    {
+        CPLCreateXMLNode(
+            CPLCreateXMLNode(CPLGetXMLNode(psSrc, "SourceFilename"),
+                             CXT_Attribute, "generation"),
+            CXT_Text, m_osGeneration.c_str());
+    }
 }
 
 /************************************************************************/
@@ -676,6 +684,25 @@ CPLErr VRTSimpleSource::XMLInit(const CPLXMLNode *psSrc, const char *pszVRTPath,
         if (pszShared != nullptr)
         {
             m_nExplicitSharedStatus = CPLTestBool(pszShared);
+        }
+
+        const char *pszGeneration =
+            CPLGetXMLValue(psSourceFileNameNode, "generation", nullptr);
+        if (pszGeneration != nullptr)
+        {
+            if (pszGeneration[0] == '\0' ||
+                strspn(pszGeneration, "0123456789") != strlen(pszGeneration))
+            {
+                CPLError(CE_Warning, CPLE_AppDefined,
+                         "Invalid 'generation' attribute '%s' on "
+                         "<SourceFilename>: must be a positive integer. "
+                         "Ignoring it.",
+                         pszGeneration);
+            }
+            else
+            {
+                m_osGeneration = pszGeneration;
+            }
         }
 
         m_osSrcDSName = GDALDataset::BuildFilename(
@@ -856,6 +883,17 @@ void VRTSimpleSource::OpenSource() const
     /* ----------------------------------------------------------------- */
     /*      Create a proxy dataset                                       */
     /* ----------------------------------------------------------------- */
+    // Pin the source to a specific GCS object generation, if requested. The
+    // generation is applied as a path-specific option (rather than around the
+    // open call only) because the proxy pool opens the underlying dataset
+    // lazily, so the option must still be in effect when that deferred open
+    // fires. See the GS_GENERATION handling in cpl_google_cloud.cpp.
+    if (!m_osGeneration.empty())
+    {
+        VSISetPathSpecificOption(m_osSrcDSName.c_str(), "GS_GENERATION",
+                                 m_osGeneration.c_str());
+    }
+
     GDALProxyPoolDataset *proxyDS = nullptr;
     std::string osKeyMapSharedSources;
     if (m_poMapSharedSources)
@@ -865,6 +903,13 @@ void VRTSimpleSource::OpenSource() const
         {
             osKeyMapSharedSources += "||";
             osKeyMapSharedSources += m_aosOpenOptions[i];
+        }
+        // Keep sources pinned to different generations distinct in the shared
+        // source cache, so the same path at two generations is not conflated.
+        if (!m_osGeneration.empty())
+        {
+            osKeyMapSharedSources += "||generation=";
+            osKeyMapSharedSources += m_osGeneration;
         }
 
         proxyDS = cpl::down_cast<GDALProxyPoolDataset *>(

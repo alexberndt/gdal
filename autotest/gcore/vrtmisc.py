@@ -1035,3 +1035,50 @@ def test_vrtmisc_virtual_overview_mask_band_as_regular_band(tmp_vsimem):
     vrt_ds = gdal.Translate("", src_filename, options="-of VRT -b 1 -b 2 -b 3 -b mask")
     assert vrt_ds.GetRasterBand(1).GetOverviewCount() == 1
     assert vrt_ds.GetRasterBand(4).GetColorInterpretation() == gdal.GCI_AlphaBand
+
+
+###############################################################################
+# Test the generation attribute of a source SourceFilename (the per-source GCS
+# object-version pin).
+
+
+@pytest.fixture()
+def vrt_with_source_generation():
+    """Build a one-band VRT whose source carries the given generation attribute."""
+
+    def _build(generation):
+        return f"""<VRTDataset rasterXSize="20" rasterYSize="20">
+  <VRTRasterBand dataType="Byte" band="1">
+    <SimpleSource>
+      <SourceFilename relativeToVRT="0" generation="{generation}">data/byte.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SrcRect xOff="0" yOff="0" xSize="20" ySize="20" />
+      <DstRect xOff="0" yOff="0" xSize="20" ySize="20" />
+    </SimpleSource>
+  </VRTRasterBand>
+</VRTDataset>
+"""
+
+    return _build
+
+
+def test_vrtmisc_source_generation_roundtrip(vrt_with_source_generation):
+
+    ds = gdal.Open(vrt_with_source_generation("1712345678901234"))
+    assert ds is not None
+    serialized = ds.GetMetadata("xml:VRT")[0]
+    assert (
+        'generation="1712345678901234"' in serialized
+    ), "the generation attribute must survive VRT re-serialization"
+
+
+def test_vrtmisc_source_generation_invalid(vrt_with_source_generation):
+
+    with gdal.quiet_errors():
+        ds = gdal.Open(vrt_with_source_generation("not-a-number"))
+        assert ds is not None
+        assert gdal.GetLastErrorMsg().find("generation") >= 0
+    serialized = ds.GetMetadata("xml:VRT")[0]
+    assert (
+        "generation=" not in serialized
+    ), "an invalid generation must be ignored and left out of the serialized VRT"

@@ -360,6 +360,19 @@ The relativeToVRT attribute on the SourceFilename indicates whether the
 filename should be interpreted as relative to the .vrt file (value is 1)
 or not relative to the .vrt file (value is 0).  The default is 0.
 
+The optional generation attribute on the SourceFilename pins the source to a
+specific Google Cloud Storage object generation (version). It must be a
+positive integer. When set, it is applied as the ``GS_GENERATION``
+path-specific option when the source is opened, so a specific (possibly
+non-current) object version is read instead of the live one. It is only
+meaningful for ``/vsigs/`` sources and requires GDAL support for reading a
+pinned GCS generation. An invalid (non-integer) value is ignored with a
+warning.
+
+.. code-block:: xml
+
+    <SourceFilename relativeToVRT="0" generation="1712345678901234">/vsigs/my-bucket/img.tif</SourceFilename>
+
 Some characteristics of the source band can be specified in the optional
 ``SourceProperties`` element to enable the VRT driver to defer the opening of the source
 dataset until it really needs to read data from it. This is particularly useful
