@@ -93,6 +93,7 @@ struct DatasetProperty
     std::vector<int> anOverviewFactors{};
     std::vector<std::string> aosDescriptions{};
     std::map<int, std::map<std::string, std::string>> mapBandMetadata{};
+    std::string osGeneration{};
 };
 
 struct BandProperty
@@ -1362,6 +1363,10 @@ void VRTBuilder::CreateVRTSeparate(VRTDataset *poVRTDS)
                 FALSE, dfSrcXOff, dfSrcYOff, dfSrcXSize, dfSrcYSize, dfDstXOff,
                 dfDstYOff, dfDstXSize, dfDstYSize);
 
+            if (!psDatasetProperties->osGeneration.empty())
+                poSimpleSource->SetGeneration(
+                    psDatasetProperties->osGeneration.c_str());
+
             if (bWriteAbsolutePath)
                 WriteAbsolutePath(poSimpleSource, dsFileName);
 
@@ -1611,6 +1616,10 @@ void VRTBuilder::CreateVRTNonSeparate(VRTDataset *poVRTDS)
                                        dfSrcYSize, dfDstXOff, dfDstYOff,
                                        dfDstXSize, dfDstYSize);
 
+            if (!psDatasetProperties->osGeneration.empty())
+                poSimpleSource->SetGeneration(
+                    psDatasetProperties->osGeneration.c_str());
+
             if (bWriteAbsolutePath)
                 WriteAbsolutePath(poSimpleSource, dsFileName);
 
@@ -1631,6 +1640,10 @@ void VRTBuilder::CreateVRTNonSeparate(VRTDataset *poVRTDS)
                     GDALRasterBand::FromHandle(GDALGetRasterBand(hSourceDS, 1)),
                     TRUE, dfSrcXOff, dfSrcYOff, dfSrcXSize, dfSrcYSize,
                     dfDstXOff, dfDstYOff, dfDstXSize, dfDstYSize);
+
+                if (!psDatasetProperties->osGeneration.empty())
+                    poComplexSource->SetGeneration(
+                        psDatasetProperties->osGeneration.c_str());
 
                 if (bWriteAbsolutePath)
                     WriteAbsolutePath(poComplexSource, dsFileName);
@@ -1671,6 +1684,10 @@ void VRTBuilder::CreateVRTNonSeparate(VRTDataset *poVRTDS)
                 GDALRasterBand::FromHandle(GDALGetRasterBand(hSourceDS, 1)),
                 TRUE, dfSrcXOff, dfSrcYOff, dfSrcXSize, dfSrcYSize, dfDstXOff,
                 dfDstYOff, dfDstXSize, dfDstYSize);
+
+            if (!psDatasetProperties->osGeneration.empty())
+                poSource->SetGeneration(
+                    psDatasetProperties->osGeneration.c_str());
 
             if (bWriteAbsolutePath)
                 WriteAbsolutePath(poSource, dsFileName);
@@ -1730,6 +1747,42 @@ void VRTBuilder::CreateVRTNonSeparate(VRTDataset *poVRTDS)
 /*                               Build()                                */
 /************************************************************************/
 
+/************************************************************************/
+/*                      ExtractSourceGeneration()                       */
+/************************************************************************/
+
+/* Split an optional "?generation=<n>" suffix (used to pin a specific GCS
+ * object version) off a /vsigs/ or gs:// source name. On success, when a
+ * suffix is present, osGeneration is filled and osFilename is shortened to the
+ * clean path. Returns false, with an error emitted, if the suffix is present
+ * but not a positive integer. Only "?generation=" is recognized.
+ */
+static bool ExtractSourceGeneration(std::string &osFilename,
+                                    std::string &osGeneration)
+{
+    osGeneration.clear();
+    if (!STARTS_WITH(osFilename.c_str(), "/vsigs/") &&
+        !STARTS_WITH(osFilename.c_str(), "gs://"))
+        return true;
+    constexpr const char *pszMarker = "?generation=";
+    const auto nPos = osFilename.find(pszMarker);
+    if (nPos == std::string::npos)
+        return true;
+    const std::string osValue = osFilename.substr(nPos + strlen(pszMarker));
+    if (osValue.empty() ||
+        osValue.find_first_not_of("0123456789") != std::string::npos)
+    {
+        CPLError(CE_Failure, CPLE_IllegalArg,
+                 "Invalid generation in source name '%s': '?generation=' must "
+                 "be followed by a positive integer",
+                 osFilename.c_str());
+        return false;
+    }
+    osGeneration = osValue;
+    osFilename.resize(nPos);
+    return true;
+}
+
 std::unique_ptr<GDALDataset> VRTBuilder::Build(GDALProgressFunc pfnProgress,
                                                void *pProgressData)
 {
@@ -1768,6 +1821,29 @@ std::unique_ptr<GDALDataset> VRTBuilder::Build(GDALProgressFunc pfnProgress,
     }
 
     asDatasetProperties.resize(nInputFiles);
+
+    // Extract optional "?generation=<n>" pins from GCS source names. Apply
+    // each as a GS_GENERATION path-specific option (so our own analysis/read
+    // opens see the pinned object version) and remember it to stamp onto the
+    // corresponding VRT source. Only applies to plain filename inputs.
+    if (pahSrcDS == nullptr)
+    {
+        for (int i = 0; i < nInputFiles; i++)
+        {
+            std::string osFilename = ppszInputFilenames[i];
+            std::string osGeneration;
+            if (!ExtractSourceGeneration(osFilename, osGeneration))
+                return nullptr;
+            if (!osGeneration.empty())
+            {
+                CPLFree(ppszInputFilenames[i]);
+                ppszInputFilenames[i] = CPLStrdup(osFilename.c_str());
+                asDatasetProperties[i].osGeneration = osGeneration;
+                VSISetPathSpecificOption(osFilename.c_str(), "GS_GENERATION",
+                                         osGeneration.c_str());
+            }
+        }
+    }
 
     if (pszSrcNoData != nullptr)
     {

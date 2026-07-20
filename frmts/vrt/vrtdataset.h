@@ -1498,6 +1498,14 @@ class CPL_DLL VRTSimpleSource CPL_NON_FINAL : public VRTSource
     // Must be called after SetSrcBand()
     void SetSourceDatasetName(const char *pszFilename, bool bRelativeToVRT);
 
+    /** Pin the source to a specific GCS object generation (version). Applied
+     * as the GS_GENERATION path-specific option when the source is opened, and
+     * serialized as the "generation" attribute of SourceFilename. */
+    void SetGeneration(const char *pszGeneration)
+    {
+        m_osGeneration = pszGeneration ? pszGeneration : "";
+    }
+
     const CPLString &GetResampling() const
     {
         return m_osResampling;

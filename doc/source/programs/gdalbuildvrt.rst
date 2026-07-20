@@ -255,6 +255,21 @@ changed in later versions.
 
     Specify a text file with an input filename on each line. See :example:`gdalbuildvrt-filelist`.
 
+.. option:: <src_dataset_name>
+
+    Name of a source dataset. For a Google Cloud Storage source (``/vsigs/`` or
+    ``gs://``), an optional ``?generation=<n>`` suffix pins the source to a
+    specific object generation (version). The suffix is stripped from the
+    stored source name, applied as the ``GS_GENERATION`` path-specific option
+    when the source is read, and recorded as the ``generation`` attribute of
+    the VRT source so the built VRT keeps referring to that version. An invalid
+    (non-integer) value is an error. Only applies to Google Cloud Storage
+    sources and requires GDAL support for reading a pinned GCS generation.
+
+    ::
+
+        gdalbuildvrt out.vrt "/vsigs/my-bucket/img.tif?generation=1712345678901234"
+
 .. option:: -q
 
     Disable the progress bar on the console

@@ -1337,3 +1337,38 @@ def test_gdalbuildvrt_cadrg_frames_mixing_transparent_and_not():
     vrt_ds = gdal.BuildVRT("", [src2_ds, src_ds])
     assert vrt_ds.GetRasterBand(1).GetNoDataValue() == 216
     assert vrt_ds.GetRasterBand(1).GetColorTable().GetCount() == 217
+
+
+###############################################################################
+# Test the "?generation=<n>" suffix on GCS source names: it is parsed off,
+# applied as the GS_GENERATION path-specific option, and stamped onto the VRT
+# source (see also the vsigs generation-read test and the VRT serialization
+# test).
+
+
+def test_gdalbuildvrt_lib_source_generation_invalid():
+
+    with pytest.raises(Exception, match="generation"):
+        gdal.BuildVRT("", ["/vsigs/some-bucket/obj.tif?generation=not-a-number"])
+
+
+def test_gdalbuildvrt_lib_source_generation_sets_path_option():
+
+    path = "/vsigs/some-bucket/obj.tif"
+    try:
+        # The source open fails (no server), but the suffix is parsed and the
+        # option applied before that, so the clean path carries the pin.
+        with gdal.quiet_errors():
+            gdal.BuildVRT("", [path + "?generation=1712345678901234"])
+        val = gdal.GetPathSpecificOption(path, "GS_GENERATION", "")
+        assert val == "1712345678901234"
+    finally:
+        gdal.SetPathSpecificOption(path, "GS_GENERATION", None)
+
+
+def test_gdalbuildvrt_lib_no_generation_on_plain_source(tmp_vsimem):
+
+    src = tmp_vsimem / "src.tif"
+    gdal.GetDriverByName("GTiff").Create(src, 1, 1)
+    ds = gdal.BuildVRT("", [src])
+    assert "generation=" not in ds.GetMetadata("xml:VRT")[0]
